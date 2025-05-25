@@ -13,10 +13,10 @@ using AAEmu.Game.Models.Game.AI.v2.Behaviors.Common;
 using AAEmu.Game.Models.Game.AI.v2.Framework;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Formulas;
-using AAEmu.Game.Models.Game.Gimmicks;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Models;
 using AAEmu.Game.Models.Game.Skills;
+using AAEmu.Game.Models.Game.Skills.Effects;
 using AAEmu.Game.Models.Game.Skills.SkillControllers;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.Movements;
@@ -28,7 +28,7 @@ namespace AAEmu.Game.Models.Game.NPChar;
 
 public partial class Npc : Unit
 {
-    public override UnitTypeFlag TypeFlag { get; } = UnitTypeFlag.Npc;
+    public override UnitTypeFlag TypeFlag => UnitTypeFlag.Npc;
     public override BaseUnitType BaseUnitType => BaseUnitType.Npc;
     public override ModelPostureType ModelPostureType { get => AnimActionId > 0 ? ModelPostureType.ActorModelState : ModelPostureType.None; }
 
@@ -36,8 +36,6 @@ public partial class Npc : Unit
     public NpcTemplate Template { get; set; }
     //public Item[] Equip { get; set; }
     public NpcSpawner Spawner { get; set; }
-
-    public override UnitCustomModelParams ModelParams => Template.ModelParams;
 
     /// <summary>
     /// This is the "Idle Animation Id" that is used in UnitModelChangePosture, it can change depending on the time of the day
@@ -106,7 +104,7 @@ public partial class Npc : Unit
                 return 1f;
 
             // Returning? Use sprint speed
-            if (Ai?.GetCurrentBehavior() is ReturnStateBehavior rsb)
+            if (Ai?.GetCurrentBehavior() is ReturnStateBehavior _)
                 return stance.AiMoveSpeedSprint;
 
             // In combat, use running speed
@@ -887,8 +885,8 @@ public partial class Npc : Unit
         {
             QuestManager.Instance.DoOnMonsterHuntEvents(characterKiller, this); // No eligible owner, but the killer is a character.
             characterKiller.AddExp(KillExp, true);
-            var mate = MateManager.Instance.GetActiveMate(characterKiller.ObjId);
-            if (mate != null)
+            var mateList = characterKiller.ParentWorld.MateManager.GetActiveMates(characterKiller.Id);
+            foreach(var mate in mateList)
             {
                 mate.AddExp(KillExp);
                 // TODO: Proper message?
@@ -919,8 +917,6 @@ public partial class Npc : Unit
 
             foreach (var pl in eligiblePlayers)
             {
-                var plKillXP = 0;
-                var mateKillXP = 0;
                 var plMod = 1f;
                 var mateMod = 1f;
 
@@ -937,7 +933,7 @@ public partial class Npc : Unit
                     mateMod = 0.66f;
                 }
 
-                else if (eligiblePlayers.Count > 1 && eligiblePlayers.Count <= 3)
+                else if (eligiblePlayers.Count is > 1 and <= 3)
                 {
                     // If players are between 2 and 3, we scale. At this point, the party doesn't matter, just nearby players. 
                     if (eligiblePlayers.Count == 2)
@@ -966,30 +962,30 @@ public partial class Npc : Unit
                 }
                 else
                 {
-                    var LevDif = 1.0f;
+                    var levDif = 1.0f;
                     var levelDifference = pl.Level - this.Level;
 
                     if (levelDifference > 0)
                     {
                         // pl.Level is above this.Level
-                        LevDif = 1.0f - (0.1f * levelDifference);
+                        levDif = 1.0f - (0.1f * levelDifference);
                     }
                     else if (levelDifference < 0)
                     {
                         // pl.Level is below this.Level
-                        LevDif = 1.0f + (0.1f * -levelDifference);
+                        levDif = 1.0f + (0.1f * -levelDifference);
                     }
 
-                    plKillXP = (int)((KillExp * plMod) * LevDif);
-                    mateKillXP = (int)((KillExp * mateMod) * LevDif);
+                    var plKillXp = (int)((KillExp * plMod) * levDif);
+                    var mateKillXp = (int)((KillExp * mateMod) * levDif);
 
-                    pl.AddExp(plKillXP, true);
-                    var mate = MateManager.Instance.GetActiveMate(pl.ObjId);
-                    if (mate != null)
+                    pl.AddExp(plKillXp, true);
+                    var mateList = pl.ParentWorld.MateManager.GetActiveMates(pl.Id);
+                    foreach(var mate in mateList)
                     {
-                        mate.AddExp(mateKillXP);
+                        mate.AddExp(mateKillXp);
                         // TODO: Proper message?
-                        pl.SendMessage($"Pet gained {mateKillXP} XP");
+                        pl.SendMessage($"Pet gained {mateKillXp} XP");
                     }
                 }
 
@@ -1015,7 +1011,7 @@ public partial class Npc : Unit
         // Generate a list of all player that we had aggro on
         foreach (var (objId, aggro) in AggroTable)
         {
-            var unit = WorldManager.Instance.GetGameObject(objId);
+            var unit = aggro.Owner.ParentWorld.GetGameObject(objId);
             if (unit is Character player)
                 playerAggroList.Add(player);
         }
@@ -1126,8 +1122,7 @@ public partial class Npc : Unit
         if (unit is null)
             return;
 
-        var player = unit as Character;
-        if (player != null && player.IsInAggroListOf.ContainsKey(ObjId))
+        if (unit is Character player)
         {
             player.IsInAggroListOf.Remove(ObjId);
         }
@@ -1140,14 +1135,14 @@ public partial class Npc : Unit
         {
             return;
         }
-        if (AggroTable.TryRemove(unit.ObjId, out var value))
+        if (AggroTable.TryRemove(unit.ObjId, out _))
         {
             unit.Events.OnHealed -= OnAbuserHealed;
             unit.Events.OnDeath -= OnAbuserDied;
         }
         else
         {
-            Logger.Warn("Failed to remove unit[{0}] aggro from NPC[{1}]", unit.ObjId, this.ObjId);
+            Logger.Warn($"Failed to remove unit[{unit.ObjId}] aggro from NPC[{ObjId}]");
         }
 
         if (AggroTable.Count != lastAggroCount)
@@ -1193,12 +1188,12 @@ public partial class Npc : Unit
 
     public void ClearAllAggro()
     {
-        ///Adding for tagging
+        // Adding for tagging
         CharacterTagging.ClearAllTaggers();
 
         foreach (var table in AggroTable)
         {
-            var unit = WorldManager.Instance.GetUnit(table.Key);
+            var unit = table.Value.Owner?.ParentWorld.GetUnit(table.Key);
             if (unit != null)
             {
                 unit.Events.OnHealed -= OnAbuserHealed;
@@ -1356,7 +1351,7 @@ public partial class Npc : Unit
         moveType.RotationY = ry;
         moveType.RotationZ = rz;
         moveType.ActorFlags = flags;     // 5-walk, 4-run, 3-stand still
-        moveType.Flags = MoveTypeFlags.Moving | (IsInBattle ? MoveTypeFlags.InCombat : 0); ; // 4;
+        moveType.Flags = MoveTypeFlags.Moving | (IsInBattle ? MoveTypeFlags.InCombat : 0); // 4;
 
         moveType.DeltaMovement = new sbyte[3];
         moveType.DeltaMovement[0] = 0;
@@ -1470,5 +1465,55 @@ public partial class Npc : Unit
 
         // Return the position in the list 0 = most aggro, 100 = least aggro
         return 1f / sortedAggro.Count * pos;
+    }
+
+    /// <summary>
+    /// Add all spawn buffs that should be applied when the Npc gets created
+    /// </summary>
+    public virtual void InitializeSpawnBuffs()
+    {
+        // Initial Buffs
+        foreach (var buffId in Template.Buffs)
+        {
+            var buff = SkillManager.Instance.GetBuffTemplate(buffId);
+            if (buff == null)
+            {
+                Logger.Warn($"BuffId {buffId} for npc {TemplateId} not found");
+                continue;
+            }
+
+            var obj = new SkillCasterUnit(ObjId);
+            buff.Apply(this, obj, this, null, null, new EffectSource(), null, DateTime.UtcNow);
+        }
+
+        // Passive Buffs
+        foreach (var npcPassiveBuff in Template.PassiveBuffs)
+        {
+            var passive = new PassiveBuff() { Template = npcPassiveBuff.PassiveBuff };
+            passive.Apply(this);
+        }
+
+        // Stat bonus effects
+        foreach (var bonusTemplate in Template.Bonuses)
+        {
+            var bonus = new Bonus {
+                Template = bonusTemplate,
+                Value = bonusTemplate.Value // TODO using LinearLevelBonus
+            };
+            AddBonus(0, bonus);
+        }
+    }
+
+    public override void Delete()
+    {
+        // Detach AI
+        if (Ai != null)
+        {
+            Ai.ShouldTick = false;
+            Ai.Owner = null;
+            Ai = null;
+        }
+
+        base.Delete();
     }
 }

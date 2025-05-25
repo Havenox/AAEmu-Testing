@@ -85,7 +85,7 @@ public class DoodadSaveSubCommand : SubCommandBase
         try
         {
             _creatures = Creature.GetAllDoodads();
-            var currentWorld = WorldManager.Instance.GetWorld(((Character)character).Transform.WorldId);
+            var currentWorld = WorldManager.Instance.GetWorld(((Character)character).Transform.InstanceId);
             var doodadsInWorld = WorldManager.Instance.GetAllDoodadsFromWorld(currentWorld.Id);
             var doodadSpawnersFromFile = LoadDoodadsFromFileByWorld(currentWorld);
             var doodadSpawnersToFile = new List<JsonDoodadSpawns>(doodadSpawnersFromFile);
@@ -100,7 +100,7 @@ public class DoodadSaveSubCommand : SubCommandBase
             var addDoodads = doodadsInWorld.Where(n => n.Spawner?.Id == 0).ToList();
             var removeDoodads = doodadsInWorld.Where(n => n.Spawner?.Id == 0xffffffff).ToList();
 
-            var allDoodads = WorldManager.Instance.GetAllDoodads();
+            var allDoodads = ((Character)character).ParentWorld.GetAllDoodads();
             var lastObjId = allDoodads.Last().ObjId + 1;
 
             doodadsInWorld = null;
@@ -172,7 +172,7 @@ public class DoodadSaveSubCommand : SubCommandBase
                 }
             });
 
-            var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", currentWorld.Name, $"doodad_spawns_all_{DateTime.Now:yyyyMMdd_HHmmss}.json.add");
+            var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", currentWorld.Template.Name, $"doodad_spawns_all_{DateTime.Now:yyyyMMdd_HHmmss}.json.add");
             var json = JsonConvert.SerializeObject(doodadSpawnersToFile, Formatting.Indented, new JsonModelsConverter());
             File.WriteAllText(jsonPathOut, json);
 
@@ -229,7 +229,7 @@ public class DoodadSaveSubCommand : SubCommandBase
         try
         {
             _creatures = Creature.GetAllDoodads();
-            var currentWorld = WorldManager.Instance.GetWorld(((Character)character).Transform.WorldId);
+            var currentWorld = WorldManager.Instance.GetWorld(((Character)character).Transform.InstanceId);
             var doodadsInWorld = WorldManager.Instance.GetAllDoodadsFromWorld(currentWorld.Id);
             var doodadSpawnersFromFile = LoadDoodadsFromFileByWorld(currentWorld);
             var doodadSpawnersToFile = new List<JsonDoodadSpawns>(doodadSpawnersFromFile);
@@ -245,7 +245,7 @@ public class DoodadSaveSubCommand : SubCommandBase
             var removeDoodads = doodadsInWorld.Where(n => n.Spawner?.Id == 0xffffffff).ToList();
 
             // Получаем все doodads и последний идентификатор объекта
-            var allDoodads = WorldManager.Instance.GetAllDoodads();
+            var allDoodads = ((Character)character).ParentWorld.GetAllDoodads();
             var lastObjId = allDoodads.Last().ObjId++;
 
             // Освобождаем память, присваивая null
@@ -320,7 +320,7 @@ public class DoodadSaveSubCommand : SubCommandBase
                 }
             });
 
-            var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", currentWorld.Name, $"doodad_spawns_all_{DateTime.Now:yyyyMMdd_HHmmss}.json.add");
+            var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", currentWorld.Template.Name, $"doodad_spawns_all_{DateTime.Now:yyyyMMdd_HHmmss}.json.add");
 
             // Запись новых данных в файл
             var json = JsonConvert.SerializeObject(doodadSpawnersToFile, Formatting.Indented, new JsonModelsConverter());
@@ -358,7 +358,7 @@ public class DoodadSaveSubCommand : SubCommandBase
     private void SaveById(ICharacter character, uint doodadObjId, IMessageOutput messageOutput)
     {
         _creatures = Creature.GetAllDoodads();
-        var doodad = WorldManager.Instance.GetDoodad(doodadObjId);
+        var doodad = ((Character)character).ParentWorld.GetDoodad(doodadObjId);
         if (doodad is null)
         {
             SendColorMessage(messageOutput, Color.Red, $"Doodad with objId {doodadObjId} does not exist");
@@ -366,7 +366,7 @@ public class DoodadSaveSubCommand : SubCommandBase
             return;
         }
 
-        var world = WorldManager.Instance.GetWorld(doodad.Transform.WorldId);
+        var world = WorldManager.Instance.GetWorld(doodad.Transform.InstanceId);
         if (world is null)
         {
             SendColorMessage(messageOutput, Color.Red, $"Could not find the worldId {doodad.Transform.WorldId}");
@@ -400,7 +400,7 @@ public class DoodadSaveSubCommand : SubCommandBase
 
         spawnersFromFile[spawn.Id] = spawn;
 
-        var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Name, $"doodad_spawns_add_{DateTime.Now:yyyyMMdd_HHmmss}.json.add");
+        var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Template.Name, $"doodad_spawns_add_{DateTime.Now:yyyyMMdd_HHmmss}.json.add");
         var json = JsonConvert.SerializeObject(spawnersFromFile.Values.ToArray(), Formatting.Indented, new JsonModelsConverter());
         File.WriteAllText(jsonPathOut, json);
         //SendDebugMessage(messageOutput, $"Doodad ObjId: {doodad.ObjId} has been saved!");
@@ -408,9 +408,9 @@ public class DoodadSaveSubCommand : SubCommandBase
         Logger.Warn($"All doodads have been saved with added doodad ObjId:{doodad.ObjId}, TemplateId:{doodad.TemplateId}");
     }
 
-    private List<JsonDoodadSpawns> LoadDoodadsFromFileByWorld(World world)
+    private List<JsonDoodadSpawns> LoadDoodadsFromFileByWorld(WorldInstance worldInstance)
     {
-        var worldDirectory = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Name);
+        var worldDirectory = Path.Combine(FileManager.AppPath, "Data", "Worlds", worldInstance.Template.Name);
         var jsonFiles = Directory.GetFiles(worldDirectory, "doodad_spawns*.json");
 
         if (jsonFiles.Length == 0)

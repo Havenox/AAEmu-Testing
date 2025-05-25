@@ -1,5 +1,4 @@
-﻿using System;
-using System.Linq;
+using System;
 using System.Numerics;
 using System.Threading;
 
@@ -9,6 +8,7 @@ using AAEmu.Game.Models.Game.DoodadObj.Static;
 using AAEmu.Game.Models.Game.Models;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.Movements;
+using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Physics.Forces;
 using AAEmu.Game.Physics.Util;
 using AAEmu.Game.Utils;
@@ -20,13 +20,12 @@ using Jitter.LinearMath;
 
 using NLog;
 
-using InstanceWorld = AAEmu.Game.Models.Game.World.World;
-
 namespace AAEmu.Game.Core.Managers.World
 {
     // ReSharper disable HollowTypeName
     public class BoatPhysicsManager
     {
+        // ReSharper disable once InconsistentNaming
         private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
         private const float DefaultWaterLevel = 100f;
@@ -40,7 +39,8 @@ namespace AAEmu.Game.Core.Managers.World
         internal Jitter.World _physWorld;
         internal Buoyancy _buoyancy;
         public bool ThreadRunning { get; set; }
-        public InstanceWorld SimulationWorld { get; set; }
+        public WorldInstance SimulationWorld { get; set; }
+        // ReSharper disable once ChangeFieldTypeToSystemThreadingLock
         private readonly object _slaveListLock = new();
 
         public void Initialize()
@@ -51,11 +51,11 @@ namespace AAEmu.Game.Core.Managers.World
             _buoyancy.UseOwnFluidArea(CustomWater);
 
             // Add terrain shape based on height map
-            if (SimulationWorld.Name != "main_world") { return; }
+            if (SimulationWorld.Template.Name != "main_world") { return; }
             try
             {
-                var hmap = WorldManager.Instance.GetWorld(0).HeightMaps;
-                var heightMaxCoefficient = WorldManager.Instance.GetWorld(0).HeightMaxCoefficient;
+                var hmap = SimulationWorld.Template.HeightMaps;
+                var heightMaxCoefficient = SimulationWorld.Template.HeightMaxCoefficient;
                 var dx = hmap.GetLength(0);
                 var dz = hmap.GetLength(1);
                 var hmapTerrain = new float[dx, dz];
@@ -76,16 +76,13 @@ namespace AAEmu.Game.Core.Managers.World
 
         public bool CustomWater(ref JVector area)
         {
-            return SimulationWorld?.IsWater(new Vector3(area.X, area.Z, area.Y), out _) ?? area.Y <= (SimulationWorld?.OceanLevel ?? DefaultWaterLevel);
+            return SimulationWorld?.IsWater(new Vector3(area.X, area.Z, area.Y), out _) ?? area.Y <= (SimulationWorld?.Template.OceanLevel ?? DefaultWaterLevel);
         }
 
         public void StartPhysics()
         {
             ThreadRunning = true;
-            _thread = new Thread(PhysicsThread)
-            {
-                Name = $"Physics-{SimulationWorld?.Name ?? "???"}"
-            };
+            _thread = new Thread(PhysicsThread) { Name = "Physics-" + (SimulationWorld?.Template.Name ?? "???") };
             _thread.Start();
         }
 
@@ -197,7 +194,7 @@ namespace AAEmu.Game.Core.Managers.World
             {
                 slaveRigidBody.Position = slaveRigidBody.Position with { Y = slave.Transform.World.Position.Z };
                 zDelta = 0;
-                Logger.Info($"SyncTransformWithRigidBody {slave.Name} -> {SimulationWorld.Name}, _waterLevel={DefaultWaterLevel}, OceanLevel={SimulationWorld.OceanLevel}, slave.Position.Z={slave.Transform.World.Position.Z}");
+                Logger.Info($"SyncTransformWithRigidBody {slave.Name} -> {SimulationWorld.Template.Name}, _waterLevel={DefaultWaterLevel}, OceanLevel={SimulationWorld.Template.OceanLevel}, slave.Position.Z={slave.Transform.World.Position.Z}");
             }
 
             slave.Transform.Local.Translate(xDelta, yDelta, zDelta);
@@ -252,7 +249,7 @@ namespace AAEmu.Game.Core.Managers.World
             _buoyancy.Remove(rigidBody);
             _physWorld.RemoveBody(rigidBody);
             slave.RigidBody = null;
-            Logger.Debug($"RemoveShip {slave.Name} <- {SimulationWorld.Name}");
+            Logger.Debug($"RemoveShip {slave.Name} <- {SimulationWorld.Template.Name}");
         }
 
         private void BoatPhysicsTick(Slave slave, RigidBody rigidBody)
@@ -265,7 +262,7 @@ namespace AAEmu.Game.Core.Managers.World
 
             // Calculate submerged depth and buoyancy force
             var waterSurfaceLevel = SimulationWorld?.Water?.GetWaterSurface(slave.Transform.World.Position, out _) ??
-                                    (SimulationWorld?.OceanLevel ?? DefaultWaterLevel);
+                                    (SimulationWorld?.Template.OceanLevel ?? DefaultWaterLevel);
             var submergedDepth = Math.Max(0, waterSurfaceLevel - rigidBody.Position.Y);
             var isOnWater = submergedDepth > 0;
             var isOnLand = !isOnWater && submergedDepth <= 0;

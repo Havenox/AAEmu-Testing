@@ -40,11 +40,11 @@ namespace AAEmu.IntegrationTests.Models.Game.Quests;
 
 public class QuestTests
 {
-    private static bool _managersLoaded = false;
+    private static bool s_managersLoaded;
 
     private static void LoadManagers()
     {
-        if (_managersLoaded)
+        if (s_managersLoaded)
             return;
 
         var configurationBuilder = new ConfigurationBuilder();
@@ -68,8 +68,10 @@ public class QuestTests
         MySQL.SetConfiguration(AppConfiguration.Instance.Connections.MySQLProvider);
 
         // Loads all quests from DB
+        TickManager.Instance.Initialize();
         TaskIdManager.Instance.Initialize();
         TaskManager.Instance.Initialize();
+
         ZoneManager.Instance.Load();
         QuestManager.Instance.Load();
         FormulaManager.Instance.Load();
@@ -77,7 +79,6 @@ public class QuestTests
         PlotManager.Instance.Load();
         // SkillTlIdManager.Instance.Initialize();
         SkillManager.Instance.Load();
-        SlaveManager.Instance.Load();
         ClientFileManager.Initialize();
         TlIdManager.Instance.Initialize();
         ObjectIdManager.Instance.Initialize();
@@ -93,17 +94,14 @@ public class QuestTests
         GameDataManager.Instance.LoadGameData();
         GameScheduleManager.Instance.Load();
         TaxationsManager.Instance.Load();
-        HousingManager.Instance.Load();
+        HousingManager.Instance.LoadPlayerHousing();
         NpcManager.Instance.Load();
         DoodadManager.Instance.Load();
         TransferManager.Instance.Load();
-        GimmickManager.Instance.Load();
-        SpawnManager.Instance.Load();
 
         GameDataManager.Instance.PostLoadGameData();
-        SpawnManager.Instance.SpawnAllNpcs(0);
 
-        _managersLoaded = true;
+        s_managersLoaded = true;
     }
     public QuestTests()
     {
@@ -116,13 +114,13 @@ public class QuestTests
         // Arrange
         var questIds = GetAllQuests_Where_ComponentKindStart_HasAllActsAs_QuestActConAcceptNpc().ToArray();
         var count = 0;
-        Random rnd = new Random();
+        var rnd = new Random();
 
         // Randomizing first 500 due to performance impact... 
-        foreach (var questId in questIds.OrderBy(x => rnd.Next()).Take(500))
+        foreach (var questId in questIds.OrderBy(_ => rnd.Next()).Take(500))
         {
             count++;
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out _, out _, out _);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out _, out _, out _);
 
             // Act
             var result = quest.StartQuest();
@@ -152,7 +150,7 @@ public class QuestTests
 
         foreach (var questId in targetQuestIds)
         {
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out _, out _, out _);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out _, out _, out _);
             SetupCharacter(mockCharacter);
 
             // Act
@@ -183,7 +181,7 @@ public class QuestTests
 
         foreach (var questId in targetQuestIds)
         {
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out _, out _, out _);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out _, out _, out _);
 
             // Add a backpack item to occupy the backpack slot (Gweonid Dyed Feathers Pack)
             SetupCharacter(mockCharacter, inventorySlots: 0, equippedBackPackItem: 31831);
@@ -219,7 +217,7 @@ public class QuestTests
         {
             // Arrange
 
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out _, out _, out _);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out _, out _, out _);
             SetupCharacter(mockCharacter);
 
             // Simulates the character to be targeting an expected npc for the quest
@@ -268,7 +266,7 @@ public class QuestTests
         {
             // Arrange
 
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out _, out _, out _);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out _, out _, out _);
             SetupCharacter(mockCharacter);
 
             // Simulates the character to be targeting an expected npc for the quest
@@ -308,13 +306,13 @@ public class QuestTests
         {
             // Arrange
 
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out _, out _, out var mockWorldManager);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out _, out _, out var mockWorldManager);
             SetupCharacter(mockCharacter);
             // Simulates the character to be targeting an expected npc for the quest
             var npcComponent = QuestManager.Instance.GetTemplate(questId).GetFirstComponent(QuestComponentKind.Start);
             var npcAcceptAct = npcComponent.ActTemplates.OfType<QuestActConAcceptNpc>().FirstOrDefault();
 
-            var targetNpc = new Npc { TemplateId = npcAcceptAct.NpcId };
+            var targetNpc = new Npc { TemplateId = npcAcceptAct?.NpcId ?? 0 };
             var mockSkillNpc = new Mock<Npc>();
             var mockComponentNpc = new Mock<Npc>();
             mockSkillNpc.SetupAllProperties();
@@ -324,7 +322,7 @@ public class QuestTests
             {
                 mockCharacter.SetupGet(o => o.CurrentTarget).Returns(targetNpc);
             }
-            mockWorldManager.Setup(wm => wm.GetNpcByTemplateId(It.IsIn(npcComponent.NpcId))).Returns(mockComponentNpc.Object);
+            mockWorldManager.Setup(wm => wm.MainWorld.GetNpcByTemplateId(It.IsIn(npcComponent.NpcId))).Returns(mockComponentNpc.Object);
             // Act
             var result = quest.StartQuest();
 
@@ -340,7 +338,7 @@ public class QuestTests
                     mockCharacter.Verify(o => o.UseSkill(It.IsIn(npcComponentStart.SkillId), It.IsIn<IUnit>(mockCharacter.Object)), Times.Once);
                 else if (npcComponentStart.NpcId > 0)
                 {
-                    mockWorldManager.Verify(o => o.GetNpcByTemplateId(It.IsIn(npcComponentStart.NpcId)), Times.Once);
+                    mockWorldManager.Verify(o => o.MainWorld.GetNpcByTemplateId(It.IsIn(npcComponentStart.NpcId)), Times.Once);
                     mockComponentNpc.Verify(o => o.UseSkill(It.IsIn(npcComponentStart.SkillId), It.IsIn<IUnit>(mockComponentNpc.Object)), Times.Once);
                 }
             }
@@ -363,15 +361,15 @@ public class QuestTests
         {
             // Arrange
 
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out _, out _, WorldManager.Instance);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out _, out _, WorldManager.Instance);
             SetupCharacter(mockCharacter);
 
             // Simulates the character to be targeting an expected npc for the quest
             var npcComponent = QuestManager.Instance.GetTemplate(questId).GetFirstComponent(QuestComponentKind.Start);
             var npcAcceptAct = npcComponent.ActTemplates.OfType<QuestActConAcceptNpc>().FirstOrDefault();
-            var npc = WorldManager.Instance.GetNpcByTemplateId(npcComponent.NpcId);
+            var npc = WorldManager.Instance.MainWorld.GetNpcByTemplateId(npcComponent.NpcId);
 
-            var targetNpc = new Npc { TemplateId = npcAcceptAct.NpcId };
+            var targetNpc = new Npc { TemplateId = npcAcceptAct?.NpcId ?? 0 };
             var mockSkillNpc = new Mock<NpcFake>(npc);
             mockSkillNpc.SetupAllProperties();
 
@@ -381,7 +379,7 @@ public class QuestTests
             }
             if (npc is not null)
             {
-                WorldManager.Instance.SetNpc(npc.ObjId, mockSkillNpc.Object);
+                WorldManager.Instance.MainWorld.SetNpc(npc.ObjId, mockSkillNpc.Object);
             }
 
             // Act
@@ -429,7 +427,7 @@ public class QuestTests
             // Arrange
             var mockCharacterBuffs = new Mock<IBuffs>();
 
-            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out var mockQuestTemplate, out _, out _, out var mockSkillManager, out _, WorldManager.Instance);
+            var quest = SetupQuest(questId, QuestManager.Instance, out var mockCharacter, out _, out _, out var mockSkillManager, out _, WorldManager.Instance);
             SetupCharacter(mockCharacter, 10, 0, mockCharacterBuffs);
 
             // Simulates the character to be targeting an expected npc for the quest
@@ -490,7 +488,6 @@ public class QuestTests
         IQuestManager questManager,
         out Mock<ICharacter> mockCharacter,
         out Mock<IQuestTemplate> mockQuestTemplate,
-        out Mock<ISphereQuestManager> mockSphereQuestManager,
         out Mock<ITaskManager> mockTaskManager,
         out Mock<ISkillManager> mockSkillManager,
         out Mock<IExpressTextManager> mockExpressTextManager,
@@ -498,17 +495,16 @@ public class QuestTests
     {
         mockCharacter = new Mock<ICharacter>();
         mockQuestTemplate = new Mock<IQuestTemplate>();
-        mockSphereQuestManager = new Mock<ISphereQuestManager>();
         mockExpressTextManager = new Mock<IExpressTextManager>();
         mockSkillManager = new Mock<ISkillManager>();
         mockTaskManager = new Mock<ITaskManager>();
         mockWorldManager = new Mock<IWorldManager>();
+        ((IWorldManager)mockWorldManager).CreateStaticInstances();
 
         var quest = new Quest(
             questManager.GetTemplate(questId),
             (ICharacter)mockCharacter,
             questManager,
-            mockSphereQuestManager.Object,
             mockTaskManager.Object,
             mockSkillManager.Object,
             mockExpressTextManager.Object,
@@ -525,7 +521,6 @@ public class QuestTests
         IQuestManager questManager,
         out Mock<ICharacter> mockCharacter,
         out Mock<IQuestTemplate> mockQuestTemplate,
-        out Mock<ISphereQuestManager> mockSphereQuestManager,
         out Mock<TaskManager> mockTaskManager,
         out Mock<ISkillManager> mockSkillManager,
         out Mock<IExpressTextManager> mockExpressTextManager,
@@ -533,7 +528,6 @@ public class QuestTests
     {
         mockCharacter = new Mock<ICharacter>();
         mockQuestTemplate = new Mock<IQuestTemplate>();
-        mockSphereQuestManager = new Mock<ISphereQuestManager>();
         mockExpressTextManager = new Mock<IExpressTextManager>();
         mockSkillManager = new Mock<ISkillManager>();
         mockTaskManager = new Mock<TaskManager>();
@@ -542,7 +536,6 @@ public class QuestTests
             questManager.GetTemplate(questId),
             (ICharacter)mockCharacter,
             questManager,
-            mockSphereQuestManager.Object,
             mockTaskManager.Object,
             mockSkillManager.Object,
             mockExpressTextManager.Object,
@@ -600,7 +593,7 @@ public class QuestTests
                     detailCount++;
                 }
 
-                command.CommandText = $@"select DISTINCT
+                command.CommandText = $@"select DISTINCT 
                                                 qc.quest_context_id
                                             from
                                                 quest_components qc

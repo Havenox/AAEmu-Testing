@@ -15,7 +15,6 @@ using AAEmu.Game.Models.Game.Expeditions;
 using AAEmu.Game.Models.Game.Gimmicks;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Containers;
-using AAEmu.Game.Models.Game.Items.Loots;
 using AAEmu.Game.Models.Game.Items.Templates;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills;
@@ -40,7 +39,6 @@ public class Unit : BaseUnit, IUnit
     public virtual BaseUnitType BaseUnitType { get; set; } = BaseUnitType.Invalid;
 
     public virtual UnitEvents Events { get; }
-    private Task _regenTask;
     public uint ModelId { get; set; }
     public SkillController ActiveSkillController { get; set; }
 
@@ -218,7 +216,7 @@ public class Unit : BaseUnit, IUnit
     public BaseUnit CurrentTarget { get; set; }
     public BaseUnit CurrentInteractionObject { get; set; }
     public virtual byte RaceGender => 0;
-    public virtual UnitCustomModelParams ModelParams { get; set; }
+    public UnitCustomModelParams ModelParams { get; set; } = new ();
     public byte ActiveWeapon { get; set; }
     public bool IdleStatus { get; set; }
     public bool ForceAttack { get; set; }
@@ -227,7 +225,7 @@ public class Unit : BaseUnit, IUnit
     public SkillTask SkillTask { get; set; }
     public SkillTask AutoAttackTask { get; set; }
     public DateTime GlobalCooldown { get; set; }
-    public bool IsGlobalCooldowned => GlobalCooldown > DateTime.UtcNow;
+    public bool IsGlobalCooldownDone => GlobalCooldown > DateTime.UtcNow;
     public object GcdLock { get; set; }
     public DateTime SkillLastUsed { get; set; }
     public PlotState ActivePlotState { get; set; }
@@ -295,7 +293,7 @@ public class Unit : BaseUnit, IUnit
         }
         base.SetPosition(x, y, z, rotationX, rotationY, rotationZ);
 
-        var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.WorldId)?.OceanLevel - 2f ?? 98f;
+        var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.InstanceId)?.Template.OceanLevel - 2f ?? 98f;
         if (!IsUnderWater && Transform.World.Position.Z < worldDrownThreshold)
             IsUnderWater = true;
         else if (IsUnderWater && Transform.World.Position.Z > worldDrownThreshold)
@@ -396,11 +394,10 @@ public class Unit : BaseUnit, IUnit
         {
             attackerUnit.Events.OnKill(attackerUnit, new OnKillArgs { Target = attackerUnit });
 
-            var world = WorldManager.Instance.GetWorld(Transform.WorldId);
+            var world = WorldManager.Instance.GetWorld(Transform.InstanceId);
             if (Transform.WorldId > 0)
             {
-                var dungeon = IndunManager.Instance.GetDungeonByWorldId(Transform.WorldId);
-                if (dungeon is not null)
+                if (world.DungeonInstance is not null)
                 {
                     world.Events.OnUnitKilled(world, new OnUnitKilledArgs { Killer = attackerUnit, Victim = this });
                     world.Events.OnUnitCombatEnd(world, new OnUnitCombatEndArgs { Npc = this });
@@ -500,8 +497,8 @@ public class Unit : BaseUnit, IUnit
         // if we died sitting on a horse
         if (character.Hp > 0) { return; }
 
-        var mate = MateManager.Instance.GetActiveMate(character.ObjId);
-        if (mate != null)
+        var mateList = character.ParentWorld.MateManager.GetActiveMates(character.Id);
+        foreach (var mate in mateList)
         {
             character.Mates.DespawnMate(mate.TlId);
         }
@@ -546,28 +543,6 @@ public class Unit : BaseUnit, IUnit
         character.BroadcastPacket(new SCSkillStoppedPacket(character.ObjId, character.SkillId), true);
         TlIdManager.Instance.ReleaseId(character.TlId);
         */
-    }
-
-    [Obsolete("This method is deprecated", false)]
-    public void StartRegen()
-    {
-        if (_regenTask != null || Hp >= MaxHp && Mp >= MaxMp || Hp == 0)
-        {
-            return;
-        }
-        _regenTask = new UnitPointsRegenTask(this);
-        TaskManager.Instance.Schedule(_regenTask, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-    }
-
-    [Obsolete("This method is deprecated", false)]
-    public void StopRegen()
-    {
-        if (_regenTask == null)
-        {
-            return;
-        }
-        _regenTask.Cancel();
-        _regenTask = null;
     }
 
     public void SetInvisible(bool value)
@@ -652,7 +627,7 @@ public class Unit : BaseUnit, IUnit
 
     public override void AddBonus(uint bonusIndex, Bonus bonus)
     {
-        var bonuses = Bonuses.TryGetValue(bonusIndex, out var bonuse) ? bonuse : [];
+        var bonuses = Bonuses.TryGetValue(bonusIndex, out var bonusList) ? bonusList : [];
         bonuses.Add(bonus);
         Bonuses[bonusIndex] = bonuses;
     }
@@ -953,11 +928,6 @@ public class Unit : BaseUnit, IUnit
         }
     }
 
-    public virtual void Regenerate()
-    {
-        // Do nothing
-    }
-
     public WeaponWieldKind GetWeaponWieldKind()
     {
         var item = Equipment.GetItemBySlot((int)EquipmentItemSlot.Mainhand);
@@ -1161,41 +1131,41 @@ public class Unit : BaseUnit, IUnit
 
         if (piecesToAccountForBuff.Count == 7)
         {
-            BuffTemplate templ = null;
+            BuffTemplate buffTemplate = null;
             switch ((ArmorType)finalArmorTemplate.WearableTemplate.TypeId)
             {
                 case ArmorType.Cloth:
-                    templ = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Cloth7P);
+                    buffTemplate = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Cloth7P);
                     break;
                 case ArmorType.Leather:
-                    templ = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Leather7P);
+                    buffTemplate = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Leather7P);
                     break;
                 case ArmorType.Metal:
-                    templ = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Plate7P);
+                    buffTemplate = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Plate7P);
                     break;
             }
 
-            if (templ != null)
-                Buffs.AddBuff(new Buff(this, this, new SkillCasterUnit(), templ, null, DateTime.UtcNow));
+            if (buffTemplate != null)
+                Buffs.AddBuff(new Buff(this, this, new SkillCasterUnit(), buffTemplate, null, DateTime.UtcNow));
         }
         else
         {
-            BuffTemplate templ = null;
+            BuffTemplate buffTemplate = null;
             switch ((ArmorType)finalArmorTemplate.WearableTemplate.TypeId)
             {
                 case ArmorType.Cloth:
-                    templ = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Cloth4P);
+                    buffTemplate = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Cloth4P);
                     break;
                 case ArmorType.Leather:
-                    templ = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Leather4P);
+                    buffTemplate = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Leather4P);
                     break;
                 case ArmorType.Metal:
-                    templ = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Plate4P);
+                    buffTemplate = SkillManager.Instance.GetBuffTemplate((uint)BuffConstants.Plate4P);
                     break;
             }
 
-            if (templ != null)
-                Buffs.AddBuff(new Buff(this, this, new SkillCasterUnit(), templ, null, DateTime.UtcNow));
+            if (buffTemplate != null)
+                Buffs.AddBuff(new Buff(this, this, new SkillCasterUnit(), buffTemplate, null, DateTime.UtcNow));
         }
 
         // Get only pieces >= arcane
@@ -1233,9 +1203,8 @@ public class Unit : BaseUnit, IUnit
         if (itemRemoved != null)
         {
             // Static Item Buffs
-            var itemRemovedBuff = ItemGameData.Instance.GetItemBuff(itemRemoved.TemplateId, itemRemoved.Grade);
-            if (itemRemovedBuff == null)
-                itemRemovedBuff = SkillManager.Instance.GetBuffTemplate(itemRemoved.Template?.BuffId ?? 0);
+            var itemRemovedBuff = ItemGameData.Instance.GetItemBuff(itemRemoved.TemplateId, itemRemoved.Grade) ??
+                                  SkillManager.Instance.GetBuffTemplate(itemRemoved.Template?.BuffId ?? 0);
             if (itemRemovedBuff != null) // remove previous buff
             {
                 if (Buffs.CheckBuff(itemRemovedBuff.Id))
@@ -1254,9 +1223,7 @@ public class Unit : BaseUnit, IUnit
         if (itemAdded != null)
         {
             // Static Buffs
-            var itemAddedBuff = ItemGameData.Instance.GetItemBuff(itemAdded.TemplateId, itemAdded.Grade);
-            if (itemAddedBuff == null)
-                itemAddedBuff = SkillManager.Instance.GetBuffTemplate(itemAdded.Template.BuffId);
+            var itemAddedBuff = ItemGameData.Instance.GetItemBuff(itemAdded.TemplateId, itemAdded.Grade) ?? SkillManager.Instance.GetBuffTemplate(itemAdded.Template.BuffId);
             if (itemAddedBuff != null) // add buff from equipped item
             {
                 var newEffect =
@@ -1314,9 +1281,8 @@ public class Unit : BaseUnit, IUnit
                 // Static Buffs
                 if (item.Template.BuffId != 0)
                 {
-                    var buffTemplate = ItemGameData.Instance.GetItemBuff(item?.TemplateId ?? 0, item?.Grade ?? 0);
-                    if (buffTemplate == null)
-                        buffTemplate = SkillManager.Instance.GetBuffTemplate(item?.Template.BuffId ?? 0);
+                    var buffTemplate = ItemGameData.Instance.GetItemBuff(item?.TemplateId ?? 0, item?.Grade ?? 0) ??
+                                       SkillManager.Instance.GetBuffTemplate(item?.Template.BuffId ?? 0);
                     var newEffect =
                         new Buff(this, this, new SkillCasterUnit(), buffTemplate, null, DateTime.UtcNow)
                         {
@@ -1406,13 +1372,9 @@ public class Unit : BaseUnit, IUnit
 
     public void IncrementTriggerCount(uint buffId)
     {
-        if (_triggerCounts.ContainsKey(buffId))
+        if (!_triggerCounts.TryAdd(buffId, 1))
         {
             _triggerCounts[buffId]++;
-        }
-        else
-        {
-            _triggerCounts[buffId] = 1;
         }
     }
 
@@ -1426,7 +1388,38 @@ public class Unit : BaseUnit, IUnit
 
     public int GetTriggerCount(uint buffId)
     {
-        return _triggerCounts.ContainsKey(buffId) ? _triggerCounts[buffId] : 0;
+        return _triggerCounts.GetValueOrDefault(buffId, 0);
     }
 
+    /// <summary>
+    /// Handle is still in combat related things
+    /// </summary>
+    /// <param name="delta"></param>
+    protected virtual void CombatTick(TimeSpan delta)
+    {
+        // TODO: Make it so you can also become out of combat if you are not on any aggro lists
+        if (IsInBattle && LastCombatActivity.AddSeconds(WorldManager.DefaultCombatTimeout) < DateTime.UtcNow)
+        {
+            IsInBattle = false;
+        }
+    }
+
+     /// <summary>
+     /// Call regeneration function of the unit
+     /// </summary>
+     /// <param name="delta"></param>
+     protected virtual void RegenTick(TimeSpan delta)
+     {
+         // Do nothing
+     }
+   
+    /// <summary>
+    /// Tick called for Units in active player regions about once per second
+    /// </summary>
+    /// <param name="delta"></param>
+    public virtual void OnActiveRegionTick(TimeSpan delta)
+    {
+        CombatTick(delta);
+        RegenTick(delta);
+    }
 }

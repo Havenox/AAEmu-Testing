@@ -44,9 +44,9 @@ public class SlaveSaveSubCommand : SubCommandBase
 
     private void SaveAll(ICharacter character, IMessageOutput messageOutput)
     {
-        var currentWorld = WorldManager.Instance.GetWorld(((Character)character).Transform.WorldId);
+        var currentWorld = ((Character)character).ParentWorld;
 
-        var allSlaves = WorldManager.Instance.GetAllSlaves();
+        var allSlaves = currentWorld.GetAllSlaves();
         var slavesInWorld = WorldManager.Instance.GetAllSlavesFromWorld(currentWorld.Id);
 
         var slaveSpawnersFromFile = LoadSlavesFromFileByWorld(currentWorld);
@@ -108,7 +108,7 @@ public class SlaveSaveSubCommand : SubCommandBase
         }
 
         var jsonPathOut =
-            Path.Combine(FileManager.AppPath, "Data", "Worlds", currentWorld.Name, "slave_spawns_new.json");
+            Path.Combine(FileManager.AppPath, "Data", "Worlds", currentWorld.Template.Name, "slave_spawns_new.json");
         var json = JsonConvert.SerializeObject(slaveSpawnersToFile.ToArray(), Formatting.Indented,
             new JsonModelsConverter());
         File.WriteAllText(jsonPathOut, json);
@@ -118,17 +118,17 @@ public class SlaveSaveSubCommand : SubCommandBase
     private void SaveById(ICharacter character, uint objId, IMessageOutput messageOutput)
     {
         var spawners = new List<JsonSlaveSpawns>();
-        var slave = (Models.Game.Units.Slave)WorldManager.Instance.GetGameObject(objId);
+        var slave = (Models.Game.Units.Slave)((Character)character).ParentWorld.GetGameObject(objId);
         if (slave is null)
         {
             SendColorMessage(messageOutput, Color.Red, $"Slave with objId {objId} Does not exist");
             return;
         }
 
-        var world = WorldManager.Instance.GetWorld(slave.Transform.WorldId);
+        var world = WorldManager.Instance.GetWorld(slave.Transform.InstanceId);
         if (world is null)
         {
-            SendColorMessage(messageOutput, Color.Red, $"Could not find the worldId {slave.Transform.WorldId}");
+            SendColorMessage(messageOutput, Color.Red, $"Could not find the worldId {slave.Transform.InstanceId}");
             return;
         }
 
@@ -158,7 +158,7 @@ public class SlaveSaveSubCommand : SubCommandBase
             spawnersFromFile[spawn.Id] = spawn;
         }
 
-        var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Name, "slave_spawns_new.json");
+        var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Template.Name, "slave_spawns_new.json");
         var json = JsonConvert.SerializeObject(spawnersFromFile.Values.ToArray(), Formatting.Indented,
             new JsonModelsConverter());
         File.WriteAllText(jsonPathOut, json);
@@ -166,9 +166,9 @@ public class SlaveSaveSubCommand : SubCommandBase
             $"All slaves have been saved with added slave ObjId:{slave.ObjId}, TemplateId:{slave.TemplateId}");
     }
 
-    private List<JsonSlaveSpawns> LoadSlavesFromFileByWorld(World world)
+    private List<JsonSlaveSpawns> LoadSlavesFromFileByWorld(WorldInstance worldInstance)
     {
-        var jsonPathIn = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Name, "slave_spawns.json");
+        var jsonPathIn = Path.Combine(FileManager.AppPath, "Data", "Worlds", worldInstance.Template.Name, "slave_spawns.json");
         if (!File.Exists(jsonPathIn))
         {
             throw new GameException($"File {jsonPathIn} doesn't exists.");

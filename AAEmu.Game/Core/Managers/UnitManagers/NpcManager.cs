@@ -14,10 +14,9 @@ using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Templates;
 using AAEmu.Game.Models.Game.Merchant;
 using AAEmu.Game.Models.Game.NPChar;
-using AAEmu.Game.Models.Game.Skills;
-using AAEmu.Game.Models.Game.Skills.Effects;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
+using AAEmu.Game.Models.Game.World;
 using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Utils.DB;
 
@@ -65,7 +64,7 @@ public class NpcManager : Singleton<NpcManager>
         return null;
     }
 
-    public Npc Create(uint objectId, uint id)
+    public Npc Create(WorldInstance parentWorld, uint objectId, uint id)
     {
         var template = GetTemplate(id);
         if (template == null)
@@ -74,6 +73,7 @@ public class NpcManager : Singleton<NpcManager>
         }
 
         var npc = new Npc();
+        npc.ParentWorld = parentWorld;
         npc.ObjId = objectId > 0 ? objectId : ObjectIdManager.Instance.GetNextId();
         npc.TemplateId = id; // duplicate Id
         npc.Id = id;
@@ -119,35 +119,8 @@ public class NpcManager : Singleton<NpcManager>
                 SetEquipItemTemplate(npc, template.BodyItems[i].ItemId, slot, 0, template.BodyItems[i].NpcOnly);
         }
 
-        // Initial Buffs
-        foreach (var buffId in template.Buffs)
-        {
-            var buff = SkillManager.Instance.GetBuffTemplate(buffId);
-            if (buff == null)
-            {
-                Logger.Warn("BuffId {0} for npc {1} not found", buffId, npc.TemplateId);
-                continue;
-            }
-
-            var obj = new SkillCasterUnit(npc.ObjId);
-            buff.Apply(npc, obj, npc, null, null, new EffectSource(), null, DateTime.UtcNow);
-        }
-
-        // Passive Buffs
-        foreach (var npcPassiveBuff in template.PassiveBuffs)
-        {
-            var passive = new PassiveBuff() { Template = npcPassiveBuff.PassiveBuff };
-            passive.Apply(npc);
-        }
-
-        // Stat bonus effects
-        foreach (var bonusTemplate in template.Bonuses)
-        {
-            var bonus = new Bonus();
-            bonus.Template = bonusTemplate;
-            bonus.Value = bonusTemplate.Value; // TODO using LinearLevelBonus
-            npc.AddBonus(0, bonus);
-        }
+        npc.InitializeSpawnBuffs();
+        npc.UpdateGearBonuses(null, null);
 
         npc.Hp = npc.MaxHp;
         npc.Mp = npc.MaxMp;

@@ -30,19 +30,19 @@ public class Escape : SpecialEffectAction
 
             var portal = new Portal();
 
-            if (WorldManager.DefaultInstanceId != character.InstanceId)
+            if (WorldManager.DefaultInstanceId != character.Transform.InstanceId)
             {
                 // var portal = PortalManager.Instance.GetClosestReturnPortal(character);
                 // character.Transform.World;
-                var w = WorldManager.Instance.GetWorld(character.InstanceId);
+                var w = character.ParentWorld;
                 if (w == null)
                 {
                     return;
                 }
-                portal.X = w.SpawnPosition.X;
-                portal.Y = w.SpawnPosition.Y;
-                portal.Z = w.SpawnPosition.Z;
-                portal.ZRot = w.SpawnPosition.Roll;
+                portal.X = w.Template.SpawnPosition.X;
+                portal.Y = w.Template.SpawnPosition.Y;
+                portal.Z = w.Template.SpawnPosition.Z;
+                portal.ZRot = w.Template.SpawnPosition.Roll;
             }
             else
             {

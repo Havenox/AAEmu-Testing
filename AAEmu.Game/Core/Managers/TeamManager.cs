@@ -20,8 +20,8 @@ public class TeamManager : Singleton<TeamManager>
      * RE-DO LEAVE / KICK / DISMISS
      */
 
-    private Dictionary<uint, Team> _activeTeams; // teamId, Team
-    private Dictionary<uint, InvitationTemplate> _activeInvitations; // targetId, InvitationTemplate
+    private Dictionary<uint, Team> _activeTeams = []; // teamId, Team
+    private Dictionary<uint, InvitationTemplate> _activeInvitations = []; // targetId, InvitationTemplate
 
     public Team GetActiveTeamByUnit(uint unitId)
     {
@@ -276,6 +276,9 @@ public class TeamManager : Singleton<TeamManager>
         }
         ChatManager.Instance.GetPartyChat(newTeam, activeInvitation.Owner).JoinChannel(activeInvitation.Owner);
         ChatManager.Instance.GetPartyChat(newTeam, activeInvitation.Target).JoinChannel(activeInvitation.Target);
+        // Trigger events
+        activeInvitation.Owner.Events?.OnTeamJoin(activeInvitation, new OnTeamJoinArgs() { Team = newTeam, Player = activeInvitation.Owner });
+        activeInvitation.Target.Events?.OnTeamJoin(activeInvitation, new OnTeamJoinArgs() { Team = newTeam, Player = activeInvitation.Target });
     }
 
     public void CreateSoloTeam(Character character, bool asParty)
@@ -303,6 +306,8 @@ public class TeamManager : Singleton<TeamManager>
         if (!newTeam.IsParty)
             ChatManager.Instance.GetRaidChat(newTeam).JoinChannel(character);
         ChatManager.Instance.GetPartyChat(newTeam, character).JoinChannel(character);
+        // Trigger events
+        character.Events?.OnTeamJoin(character, new OnTeamJoinArgs() { Team = newTeam, Player = character });
     }
 
     public void AskRiskyTeam(Character unit, uint teamId, uint targetId, RiskyAction riskyAction)
@@ -342,16 +347,17 @@ public class TeamManager : Singleton<TeamManager>
 
             // Send Leave info the team
             activeTeam.BroadcastPacket(new SCTeamMemberLeavedPacket(teamId, targetId, riskyAction == RiskyAction.Kick));
-            // Find the target, and and send it's leave info
+            // Find the target, and send its leave info
             var target = WorldManager.Instance.GetCharacterById(targetId);
             if (target != null)
             {
                 target.InParty = false;
                 target.SendPacket(new SCLeavedTeamPacket(teamId, riskyAction == RiskyAction.Kick, false));
+                target.Events?.OnTeamLeave(target, new OnTeamLeaveArgs() { Id = activeTeam.Id, Team = activeTeam, Player = target });
             }
         }
 
-        // Disband if only one member left in a Party (not raid)
+        // Disband if only one member left in Party (not raid)
         if ((activeTeam.IsParty) && (activeTeam.MembersCount() <= 1))
             isAutoDisband = true;
 
@@ -359,7 +365,7 @@ public class TeamManager : Singleton<TeamManager>
         if (activeTeam.MembersOnlineCount() <= 0)
             isAutoDisband = true;
 
-        // TODO - NEED TO FIND WHY NEED THIS
+        // TODO - Need to find why we need this
         activeTeam.BroadcastPacket(new SCTeamAckRiskyActionPacket(teamId, targetId, riskyAction, 0, 0));
 
         if (isAutoDisband || riskyAction == RiskyAction.Dismiss)
@@ -377,6 +383,8 @@ public class TeamManager : Singleton<TeamManager>
                     {
                         member.Character.SendPacket(new SCLeavedTeamPacket(teamId, false, true));
                         member.Character.InParty = false;
+                        // trigger event
+                        member.Character.Events?.OnTeamLeave(member.Character, new OnTeamLeaveArgs() { Id = activeTeam.Id, Team = activeTeam, Player = member.Character });
                     }
                 }
             }
@@ -407,6 +415,7 @@ public class TeamManager : Singleton<TeamManager>
         foreach (var m in activeTeam.Members)
             if ((m != null) && (m.Character != null))
                 ChatManager.Instance.GetRaidChat(activeTeam).JoinChannel(m.Character);
+        // TODO: Handle raids in dungeons
     }
 
     public void SetTeamMemberRole(Character unit, uint teamId, uint memberId, MemberRole role)
@@ -551,8 +560,7 @@ public class TeamManager : Singleton<TeamManager>
 
     public void Load()
     {
-        _activeTeams = [];
-        _activeInvitations = [];
+        // Nothing special to do here
     }
 }
 

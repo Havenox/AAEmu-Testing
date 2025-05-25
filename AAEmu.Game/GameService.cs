@@ -57,28 +57,28 @@ public sealed class GameService : IHostedService, IDisposable
 
         stopWatch.Start();
 
+        // Ticks and Tasks
         TickManager.Instance.Initialize();
         TaskIdManager.Instance.Initialize();
         TaskManager.Instance.Initialize();
 
-        WorldManager.Instance.Load();
+        // World
         WorldIdManager.Instance.Initialize();
-        ExperienceManager.Instance.Load();
-        FeaturesManager.Initialize();
+        WorldManager.Instance.Load();
 
+        // Feature Sets 
+        FeaturesManager.Initialize();
         LocalizationManager.Instance.Load();
+
         ObjectIdManager.Instance.Initialize();
         TradeIdManager.Instance.Initialize();
+        ExperienceManager.Instance.Load();
 
         ZoneManager.Instance.Load();
+        // TODO: Implement lazy loading for heightmaps
         var heightmapTask = Task.Run(() =>
         {
             WorldManager.Instance.LoadHeightmaps();
-        }, cancellationToken);
-
-        var waterBodyTask = Task.Run(() =>
-        {
-            WorldManager.Instance.LoadWaterBodies();
         }, cancellationToken);
 
         ContainerIdManager.Instance.Initialize();
@@ -105,12 +105,10 @@ public sealed class GameService : IHostedService, IDisposable
         AuctionIdManager.Instance.Initialize();
         GimmickIdManager.Instance.Initialize();
         IndunManager.Instance.Initialize();
+        TaxationsManager.Instance.Load();
 
         GameDataManager.Instance.LoadGameData();
         QuestManager.Instance.Load();
-
-        SphereQuestManager.Instance.Load();
-        SphereQuestManager.Instance.Initialize();
 
         FormulaManager.Instance.Load();
         AiPathsManager.Instance.Load();
@@ -123,8 +121,8 @@ public sealed class GameService : IHostedService, IDisposable
         PlotManager.Instance.Load();
         SkillManager.Instance.Load();
         CraftManager.Instance.Load();
-        MateManager.Instance.Load();
-        SlaveManager.Instance.Load();
+        // MateManager.Instance.Load();
+        // SlaveManager.Instance.Load(); // Moved to WorldInstance
         TeamManager.Instance.Load();
         AuctionManager.Instance.Load();
         MailManager.Instance.Load();
@@ -145,16 +143,14 @@ public sealed class GameService : IHostedService, IDisposable
         NpcManager.Instance.Load();
 
         DoodadManager.Instance.Load();
-        TaxationsManager.Instance.Load();
-        HousingManager.Instance.Load();
         TransferManager.Instance.Load();
-        GimmickManager.Instance.Load();
+        // GimmickManager.Instance.Load();
         ShipyardManager.Instance.Load();
 
         SubZoneManager.Instance.Load();
         PublicFarmManager.Instance.Load();
 
-        SpawnManager.Instance.Load();
+        // SpawnManager.Instance.Load(); // Moved to world instance
 
         AccessLevelManager.Instance.Load();
         CashShopManager.Instance.Load();
@@ -176,6 +172,7 @@ public sealed class GameService : IHostedService, IDisposable
 
         TimeManager.Instance.Start();
         TaskManager.Instance.Start();
+        
         // LaborPowerManager.Initialize();
         TimedRewardsManager.Instance.Initialize();
 
@@ -184,8 +181,7 @@ public sealed class GameService : IHostedService, IDisposable
         AreaTriggerManager.Instance.Initialize();
         SpecialtyManager.Initialize();
         TransferManager.Instance.Initialize();
-        GimmickManager.Instance.Initialize();
-        SlaveManager.Initialize();
+        // GimmickManager.Instance.Initialize();
         CashShopManager.Instance.Initialize();
         GameDataManager.Instance.PostLoadGameData();
         FishSchoolManager.Instance.Initialize();
@@ -193,29 +189,27 @@ public sealed class GameService : IHostedService, IDisposable
         ManaRegenManager.Instance.Initialize();
         PublicFarmManager.Instance.Initialize();
 
-        if ((waterBodyTask != null) && (!waterBodyTask.IsCompleted))
-        {
-            Logger.Info("Waiting on water to be loaded before proceeding, please wait ...");
-            await waterBodyTask;
-        }
-
         if ((heightmapTask != null) && (!heightmapTask.IsCompleted))
         {
             Logger.Info("Waiting on heightmaps to be loaded before proceeding, please wait ...");
             await heightmapTask;
         }
 
+        // Start main_world and other static instance
+        WorldManager.Instance.CreateStaticInstances();
+
+        // Add houses only after the main world has loaded
+        HousingManager.Instance.LoadPlayerHousing();
+
+        // TODO: Move all spawns to WorldInstance
         var spawnSw = new Stopwatch();
         Logger.Info("Spawning units...");
         spawnSw.Start();
         HousingManager.Instance.SpawnAll(); // Houses need to be spawned before doodads
-        SpawnManager.Instance.SpawnAll();
+        // SpawnManager.Instance.SpawnAll();
         TransferManager.Instance.SpawnAll();
         spawnSw.Stop();
         Logger.Info($"Units spawned in {spawnSw.Elapsed}");
-
-        // Start running Physics when everything is loaded
-        WorldManager.Instance.StartPhysics();
 
         CharacterManager.CheckForDeletedCharacters();
         CharacterManager.Instance.StartOnlineTracking();
@@ -234,7 +228,7 @@ public sealed class GameService : IHostedService, IDisposable
 
         await SaveManager.Instance.StopAsync();
 
-        SpawnManager.Instance.Stop();
+        // SpawnManager.Instance.Stop(); Moved to World Instance
         TaskManager.Instance.Stop();
         GameNetwork.Instance.Stop();
         StreamNetwork.Instance.Stop();

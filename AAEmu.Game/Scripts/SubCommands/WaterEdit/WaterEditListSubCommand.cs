@@ -21,13 +21,13 @@ namespace AAEmu.Game.Scripts.Commands
 
         public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
         {
-            var world = WorldManager.Instance.GetWorld(character.Transform.WorldId);
+            var world = WorldManager.Instance.GetWorld(character.Transform.InstanceId);
             if (world == null)
             {
                 character.SendMessage($"[WaterEdit] You are somehow not in a valid world!");
                 return;
             }
-            character.SendMessage($"[WaterEdit] World {world.Name} has {world.Water.Areas.Count} water bodies defined:");
+            character.SendMessage($"[WaterEdit] World {world.Template.Name} has {world.Water.Areas.Count} water bodies defined:");
             foreach (var area in world.Water.Areas)
             {
                 character.SendMessage($"|cFFFFFFFF{area.Name}|r ({area.Id}) => {area.Points.Count} points");

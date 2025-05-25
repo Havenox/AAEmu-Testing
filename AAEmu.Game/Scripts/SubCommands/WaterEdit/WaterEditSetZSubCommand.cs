@@ -21,7 +21,7 @@ namespace AAEmu.Game.Scripts.Commands
 
         public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
         {
-            var world = WorldManager.Instance.GetWorld(character.Transform.WorldId);
+            var world = WorldManager.Instance.GetWorld(character.Transform.InstanceId);
             if (world == null)
             {
                 character.SendMessage($"[WaterEdit] You are somehow not in a valid world!");
@@ -37,7 +37,7 @@ namespace AAEmu.Game.Scripts.Commands
             if (WaterEditCmd.SelectedWorld != world)
             {
                 character.SendMessage(
-                    $"|cFFFF0000[WaterEdit] Currently selected water is not in the same world as you! ({WaterEdit.SelectedWorld.Name})|r");
+                    $"|cFFFF0000[WaterEdit] Currently selected water is not in the same world as you! ({WaterEdit.SelectedWorld.Template.Name})|r");
                 return;
             }
 

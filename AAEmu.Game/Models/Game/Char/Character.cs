@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
 using System.Threading;
-using System.Threading.Tasks;
 
 using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
@@ -17,7 +16,6 @@ using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Chat;
 using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.DoodadObj.Static;
-using AAEmu.Game.Models.Game.FishSchools;
 using AAEmu.Game.Models.Game.Formulas;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Actions;
@@ -34,6 +32,7 @@ using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Utils;
 
 using MySql.Data.MySqlClient;
+using Task = System.Threading.Tasks.Task;
 
 #pragma warning disable IDE0079 // Remove unnecessary suppression
 
@@ -46,7 +45,7 @@ public partial class Character : Unit, ICharacter
 
     public static Dictionary<uint, uint> UsedCharacterObjIds { get; } = [];
 
-    private Dictionary<ushort, string> _options;
+    private readonly Dictionary<ushort, string> _options;
 
     public List<IDisposable> Subscribers { get; set; }
     public override CharacterEvents Events { get; } = new();
@@ -54,6 +53,10 @@ public partial class Character : Unit, ICharacter
     public uint AccountId { get; set; }
     public Race Race { get; set; }
     public Gender Gender { get; set; }
+    /// <summary>
+    /// The ServerId this character exists on
+    /// </summary>
+    public uint ServerId { get; set; }
 
     /// <summary>
     /// Cached representation of Account Labor
@@ -70,6 +73,9 @@ public partial class Character : Unit, ICharacter
         }
     }
 
+    /// <summary>
+    /// Last time labor got updated
+    /// </summary>
     public DateTime LaborPowerModified
     {
         get => _laborPowerModified;
@@ -127,7 +133,6 @@ public partial class Character : Unit, ICharacter
     public uint ReturnDistrictId { get; set; }
     public uint ResurrectionDistrictId { get; set; }
 
-    public override UnitCustomModelParams ModelParams { get; set; }
     public override float Scale => 1f;
     public override byte RaceGender => (byte)(16 * (byte)Gender + (byte)Race);
 
@@ -225,10 +230,10 @@ public partial class Character : Unit, ICharacter
             _isOnline = value;
         }
     }
-    public FishSchool FishSchool { get; set; }
+    // public FishSchool FishSchool { get; set; }
 
     // Set to true when character has finished loading for this instance
-    private bool FinishedLoading { get; set; } = false;
+    private bool FinishedLoading { get; set; }
     private int _savedHp = 99999999;
     private int _savedMp = 99999999;
 
@@ -461,7 +466,7 @@ public partial class Character : Unit, ICharacter
                 ["fai"] = Fai
             };
             var res = formula.Evaluate(parameters);
-            res += Spi / 10;
+            res += Spi / 10.0;
             res = CalculateWithBonuses(res, UnitAttribute.ManaRegen);
 
             return (int)res;
@@ -1316,6 +1321,11 @@ public partial class Character : Unit, ICharacter
 
     #endregion
 
+    /// <summary>
+    /// This time is used to decide if a user lost connection
+    /// </summary>
+    public DateTime LastPacketActivityTime { get; set; } = DateTime.UtcNow;
+
     public Character(UnitCustomModelParams modelParams)
     {
         _options = [];
@@ -1324,7 +1334,7 @@ public partial class Character : Unit, ICharacter
         ModelParams = modelParams;
         Subscribers = [];
         ChargeLock = new object();
-        FishSchool = new FishSchool(this);
+        // FishSchool = new FishSchool(this);
         //Events.OnDisconnect += OnDisconnect;
         //Events.OnCombatStarted += OnEnterCombat;
     }
@@ -1418,7 +1428,7 @@ public partial class Character : Unit, ICharacter
         }
     }
 
-    public bool ChangeMoney(SlotType moneylocation, int amount, ItemTaskType itemTaskType = ItemTaskType.DepositMoney) => ChangeMoney(SlotType.None, moneylocation, amount, itemTaskType);
+    public bool ChangeMoney(SlotType moneyLocation, int amount, ItemTaskType itemTaskType = ItemTaskType.DepositMoney) => ChangeMoney(SlotType.None, moneyLocation, amount, itemTaskType);
 
     public bool ChangeMoney(SlotType typeFrom, SlotType typeTo, int amount, ItemTaskType itemTaskType = ItemTaskType.DepositMoney)
     {
@@ -1570,7 +1580,7 @@ public partial class Character : Unit, ICharacter
 
         base.SetPosition(x, y, z, rotationX, rotationY, rotationZ);
 
-        var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.WorldId)?.OceanLevel - 2f ?? 98f;
+        var worldDrownThreshold = WorldManager.Instance.GetWorld(Transform.InstanceId)?.Template.OceanLevel - 2f ?? 98f;
         if (!IsUnderWater && Transform.World.Position.Z < worldDrownThreshold)
             IsUnderWater = true;
         else if (IsUnderWater && Transform.World.Position.Z > worldDrownThreshold)
@@ -1652,7 +1662,7 @@ public partial class Character : Unit, ICharacter
                     await Task.Delay(2 * 1000, _unreleasedZoneTransportedOut.Token);
                 }
                 ForceDismount();
-                MateManager.Instance.RemoveAndDespawnAllActiveOwnedMates(this);
+                ParentWorld.MateManager.RemoveAndDespawnAllActiveOwnedMates(this);
                 await Task.Delay(200);
                 var portal = PortalManager.Instance.GetClosestReturnPortal(Connection.ActiveChar);
                 // force transported out
@@ -1779,7 +1789,7 @@ public partial class Character : Unit, ICharacter
         SendPacket(new SCChatMessagePacket(type, message));
     }
 
-    public void SendMessage(string message) => SendMessage(ChatType.System, message, null);
+    public void SendMessage(string message) => SendMessage(ChatType.System, message);
 
     /// <summary>
     /// Sends a debug message to player chat, but only if DebugInfo is enabled in the configuration
@@ -1788,7 +1798,7 @@ public partial class Character : Unit, ICharacter
     public void SendDebugMessage(string message)
     {
         if (AppConfiguration.Instance.DebugInfo && CharacterManager.Instance.GetEffectiveAccessLevel(this) >= AppConfiguration.Instance.DebugInfoLevel)
-            SendMessage(ChatType.System, message, null);
+            SendMessage(ChatType.System, message);
     }
     
     /// <summary>
@@ -1803,7 +1813,7 @@ public partial class Character : Unit, ICharacter
     }
 
     /// <summary>
-    /// Sends an error message to the player that also has a sub-type
+    /// Sends an error message to the player that also has a subtype
     /// </summary>
     /// <param name="errorMsgType1"></param>
     /// <param name="errorMsgType2"></param>
@@ -1852,21 +1862,6 @@ public partial class Character : Unit, ICharacter
         base.ReduceCurrentHp(attacker, value, killReason);
     }
 
-    public void DoChangeBreath()
-    {
-        if (IsDrowning)
-        {
-            var damageAmount = MaxHp * .1;
-            ReduceCurrentHp(this, (int)damageAmount);
-            SendPacket(new SCEnvDamagePacket(EnvSource.Drowning, ObjId, (uint)damageAmount));
-        }
-        else
-        {
-            Breath -= 1000; //1 second
-            SendPacket(new SCSetBreathPacket(Breath));
-        }
-    }
-
     public void DoRepair(List<Item> items)
     {
         var tasks = new List<ItemTask>();
@@ -1879,19 +1874,19 @@ public partial class Character : Unit, ICharacter
 
             if (!Inventory.Bag.Items.Contains(item) && !Equipment.Items.Contains(item))
             {
-                Logger.Warn("Attempting to repair an item that isn't in your inventory or equipment, Item: {0}", item.Id);
+                Logger.Warn($"Attempting to repair an item that isn't in your inventory or equipment, Item: {item.Id}");
                 continue;
             }
 
             if (!(item is EquipItem equipItem && item.Template is EquipItemTemplate))
             {
-                Logger.Warn("Attempting to repair a non-equipment item, Item: {0}", item.Id);
+                Logger.Warn($"Attempting to repair a non-equipment item, Item: {item.Id}");
                 continue;
             }
 
             if (equipItem.Durability >= equipItem.MaxDurability)
             {
-                Logger.Warn("Attempting to repair an item that has max durability, Item: {0}", item.Id);
+                Logger.Warn($"Attempting to repair an item that has max durability, Item: {item.Id}");
                 continue;
             }
 
@@ -1902,7 +1897,7 @@ public partial class Character : Unit, ICharacter
 
             if (!npc.Template.Blacksmith)
             {
-                Logger.Warn("Attempting to repair an item while not at a blacksmith, Item: {0}, NPC: {1}", item.Id, npc);
+                Logger.Warn($"Attempting to repair an item while not at a blacksmith, Item: {item.Id}, NPC: {npc}");
                 continue;
             }
 
@@ -1918,7 +1913,7 @@ public partial class Character : Unit, ICharacter
 
             if (Money < currentRepairCost)
             {
-                Logger.Warn("Not enough money to repair, Item: {0}, Money: {1}, RepairCost: {2}", item.Id, Money, currentRepairCost);
+                Logger.Warn($"Not enough money to repair, Item: {item.Id}, Money: {Money}, RepairCost: {currentRepairCost}");
                 continue;
             }
 
@@ -1937,39 +1932,6 @@ public partial class Character : Unit, ICharacter
         Connection.SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.Repair, tasks, []));
     }
 
-    public override void Regenerate()
-    {
-        if (IsDead || !NeedsRegen || IsDrowning)
-        {
-            return;
-        }
-
-        var oldHp = Hp;
-
-        if (IsInBattle)
-        {
-            Hp += PersistentHpRegen;
-        }
-        else
-        {
-            Hp += HpRegen;
-        }
-
-        if (IsInPostCast)
-        {
-            Mp += PersistentMpRegen;
-        }
-        else
-        {
-            Mp += MpRegen;
-        }
-
-        Hp = Math.Min(Hp, MaxHp);
-        Mp = Math.Min(Mp, MaxMp);
-        BroadcastPacket(new SCUnitPointsPacket(ObjId, Hp, Mp), true);
-        PostUpdateCurrentHp(this, oldHp, Hp, KillReason.Unknown);
-    }
-
     /// <summary>
     /// Forcibly remove character from any mount or vehicle they might be riding,
     /// useful for calling before any kind of teleport function 
@@ -1979,17 +1941,17 @@ public partial class Character : Unit, ICharacter
     {
         var res = false;
         // Force dismount Mates (mounts)
-        var isOnMount = MateManager.Instance.GetIsMounted(ObjId, out var attachedRiderPoint);
+        var isOnMount = ParentWorld.MateManager.GetIsMounted(ObjId, out var attachedRiderPoint);
         if (isOnMount != null)
         {
-            MateManager.Instance.UnMountMate(this, isOnMount.TlId, attachedRiderPoint, reason);
+            ParentWorld.MateManager.UnMountMate(this, isOnMount.TlId, attachedRiderPoint, reason);
             res = true;
         }
         // Force remove from slaves
-        var isOnSlave = SlaveManager.Instance.GetIsMounted(ObjId, out var attachedDriverPoint);
+        var isOnSlave = ParentWorld.SlaveManager.GetIsMounted(ObjId, out _);
         if (isOnSlave != null)
         {
-            SlaveManager.Instance.UnbindSlave(this, isOnSlave.TlId, reason);
+            ParentWorld.SlaveManager.UnbindSlave(this, isOnSlave.TlId, reason);
             res = true;
         }
         // Unbind from any parent
@@ -2001,7 +1963,7 @@ public partial class Character : Unit, ICharacter
     {
         var res = ForceDismount();
 
-        var mySlave = SlaveManager.Instance.GetActiveSlaveByOwnerObjId(Connection.ActiveChar.ObjId);
+        var mySlave = ParentWorld.SlaveManager.GetActiveSlaveByOwnerObjId(Connection.ActiveChar.ObjId);
         if (mySlave != null)
         {
             // run the task to turn off the transport after timeToDespawn minutes
@@ -2012,7 +1974,7 @@ public partial class Character : Unit, ICharacter
                 Thread.Sleep(TimeSpan.FromMilliseconds(timeToDespawn)); // 10 minutes
                 if (token.IsCancellationRequested)
                     return;
-                SlaveManager.Instance.RemoveAndDespawnAllActiveOwnedSlaves(this);
+                ParentWorld.SlaveManager.RemoveAndDespawnAllActiveOwnedSlaves(this);
             }, token);
             mySlave.LeaveTask.Start();
         }
@@ -2040,7 +2002,7 @@ public partial class Character : Unit, ICharacter
                 Thread.Sleep(TimeSpan.FromMilliseconds(timeToDespawn));
                 if (token.IsCancellationRequested)
                     return;
-                SlaveManager.Instance.RemoveAndDespawnTestSlave(this, slave.ObjId);
+                ParentWorld.SlaveManager.RemoveAndDespawnTestSlave(this, slave.ObjId);
             }, token);
             slave.LeaveTask.Start();
         }
@@ -2051,7 +2013,7 @@ public partial class Character : Unit, ICharacter
     public void RemoveAndDespawnActiveOwnedMatesSlaves()
     {
         // Despawn and unmount everybody from owned Mates
-        MateManager.Instance.RemoveAndDespawnAllActiveOwnedMates(this);
+        ParentWorld.MateManager.RemoveAndDespawnAllActiveOwnedMates(this);
         ForceDismountAndDespawn();
     }
 
@@ -2096,8 +2058,9 @@ public partial class Character : Unit, ICharacter
                     character.Ability1 = (AbilityType)reader.GetByte("ability1");
                     character.Ability2 = (AbilityType)reader.GetByte("ability2");
                     character.Ability3 = (AbilityType)reader.GetByte("ability3");
-                    character.Transform = new Transform(character, null,
-                        reader.GetUInt32("world_id"), reader.GetUInt32("zone_id"), WorldManager.DefaultInstanceId,
+                    character.ServerId = reader.GetUInt32("world_id");
+                    character.Transform = new Transform(character, null, 
+                        reader.GetUInt32("zone_id"), WorldManager.DefaultInstanceId,
                         reader.GetFloat("x"), reader.GetFloat("y"), reader.GetFloat("z"),
                         reader.GetFloat("yaw"), reader.GetFloat("pitch"), reader.GetFloat("roll")
                         );
@@ -2214,8 +2177,9 @@ public partial class Character : Unit, ICharacter
                     character.Ability1 = (AbilityType)reader.GetByte("ability1");
                     character.Ability2 = (AbilityType)reader.GetByte("ability2");
                     character.Ability3 = (AbilityType)reader.GetByte("ability3");
-                    character.Transform = new Transform(character, null,
-                        reader.GetUInt32("world_id"), reader.GetUInt32("zone_id"), WorldManager.DefaultInstanceId,
+                    character.ServerId = reader.GetUInt32("world_id");
+                    character.Transform = new Transform(character, null, 
+                        reader.GetUInt32("zone_id"), WorldManager.DefaultInstanceId,
                         reader.GetFloat("x"), reader.GetFloat("y"), reader.GetFloat("z"),
                         reader.GetFloat("yaw"), reader.GetFloat("pitch"), reader.GetFloat("roll")
                         );
@@ -2425,7 +2389,7 @@ public partial class Character : Unit, ICharacter
     public bool SaveDirectlyToDatabase()
     {
         // Try to save New Character
-        var saved = false;
+        bool saved;
         using (var sqlConnection = MySQL.CreateConnection())
         {
             using (var transaction = sqlConnection.BeginTransaction())
@@ -2438,7 +2402,7 @@ public partial class Character : Unit, ICharacter
                 catch (Exception e)
                 {
                     saved = false;
-                    Logger.Error(e, "Character save failed for {0} - {1}\n", Id, Name);
+                    Logger.Error(e, $"Character save failed for {Id} - {Name}");
                     try
                     {
                         transaction.Rollback();
@@ -2446,7 +2410,7 @@ public partial class Character : Unit, ICharacter
                     catch (Exception eRollback)
                     {
                         // Really failed here
-                        Logger.Fatal(eRollback, "Character save rollback failed for {0} - {1}\n", Id, Name);
+                        Logger.Fatal(eRollback, $"Character save rollback failed for {Id} - {Name}");
                     }
                 }
             }
@@ -2503,7 +2467,7 @@ public partial class Character : Unit, ICharacter
                 command.Parameters.AddWithValue("@ability1", (byte)Ability1);
                 command.Parameters.AddWithValue("@ability2", (byte)Ability2);
                 command.Parameters.AddWithValue("@ability3", (byte)Ability3);
-                command.Parameters.AddWithValue("@world_id", MainWorldPosition?.WorldId ?? Transform.WorldId);
+                command.Parameters.AddWithValue("@world_id", ServerId);
                 command.Parameters.AddWithValue("@zone_id", MainWorldPosition?.ZoneId ?? Transform.ZoneId);
                 command.Parameters.AddWithValue("@x", MainWorldPosition?.World.Position.X ?? Transform.World.Position.X);
                 command.Parameters.AddWithValue("@y", MainWorldPosition?.World.Position.Y ?? Transform.World.Position.Y);
@@ -2716,6 +2680,121 @@ public partial class Character : Unit, ICharacter
     {
         Hp = Math.Min(_savedHp, MaxHp);
         Mp = Math.Min(_savedMp, MaxMp);
+    }
+
+    /// <summary>
+    /// Handle the "is still in combat" related things
+    /// </summary>
+    /// <param name="delta"></param>
+    protected override void CombatTick(TimeSpan delta)
+    {
+        // Handle normal combat things
+        base.CombatTick(delta);
+
+        // Player specific condition
+        if ((IsInPostCast && LastCast.AddSeconds(5) < DateTime.UtcNow))
+        {
+            IsInPostCast = false;
+        }
+    }
+
+    /// <summary>
+    /// Handle player's Breath updates
+    /// </summary>
+    /// <param name="delta"></param>
+    private void BreathTick(TimeSpan delta)
+    {
+        if (IsDead || !IsUnderWater)
+        {
+            return;
+        }
+
+        // TODO: make this delta-dependant
+        if (IsDrowning)
+        {
+            var damageAmount = MaxHp * .1;
+            ReduceCurrentHp(this, (int)damageAmount);
+            SendPacket(new SCEnvDamagePacket(EnvSource.Drowning, ObjId, (uint)damageAmount));
+        }
+        else
+        {
+            Breath -= 1000; //1 second
+            SendPacket(new SCSetBreathPacket(Breath));
+        }
+    }
+
+    /// <summary>
+    /// Call regeneration function of the unit
+    /// </summary>
+    /// <param name="delta"></param>
+    protected override void RegenTick(TimeSpan delta)
+    {
+        base.RegenTick(delta);
+
+        if (IsDead || !NeedsRegen || IsDrowning)
+        {
+            return;
+        }
+
+        var oldHp = Hp;
+
+        if (IsInBattle)
+        {
+            Hp += PersistentHpRegen;
+        }
+        else
+        {
+            Hp += HpRegen;
+        }
+
+        if (IsInPostCast)
+        {
+            Mp += PersistentMpRegen;
+        }
+        else
+        {
+            Mp += MpRegen;
+        }
+
+        Hp = Math.Min(Hp, MaxHp);
+        Mp = Math.Min(Mp, MaxMp);
+        BroadcastPacket(new SCUnitPointsPacket(ObjId, Hp, Mp), true);
+        PostUpdateCurrentHp(this, oldHp, Hp, KillReason.Unknown);
+    }
+
+    /// <summary>
+    /// Check if the player is inactive (crashed or disconnect) and remove the Character object from the world if they did
+    /// </summary>
+    /// <param name="delta"></param>
+    private void CheckPlayerInactivity(TimeSpan delta)
+    {
+        var maxAllowedInactivityTime = TimeSpan.FromMinutes(2);
+        if (DateTime.UtcNow.Subtract(delta) - LastPacketActivityTime > maxAllowedInactivityTime)
+        {
+            // Kind of prevent repeat calls
+            LastPacketActivityTime = DateTime.UtcNow;
+
+            // Remove character
+            EnterWorldManager.LeaveWorldTask(null, LeaveWorldTargetType.CharacterSelect, this);
+
+            // If this character is still linked, then unlink it from the connection
+            if ((Connection != null) && (Connection.ActiveChar == this))
+            {
+                Connection.ActiveChar = null;
+                Connection = null;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Tick called for players, about once per second
+    /// </summary>
+    /// <param name="delta"></param>    
+    public override void OnActiveRegionTick(TimeSpan delta)
+    {
+        base.OnActiveRegionTick(delta);
+        BreathTick(delta);
+        CheckPlayerInactivity(delta);
     }
 
     public override string DebugName()

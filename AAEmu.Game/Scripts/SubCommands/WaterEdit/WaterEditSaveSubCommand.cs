@@ -24,14 +24,14 @@ namespace AAEmu.Game.Scripts.Commands
 
         public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
         {
-            var world = WorldManager.Instance.GetWorld(character.Transform.WorldId);
+            var world = WorldManager.Instance.GetWorld(character.Transform.InstanceId);
             if (world == null)
             {
                 character.SendMessage($"[WaterEdit] You are somehow not in a valid world!");
                 return;
             }
             
-            var saveFileName = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Name, "water_bodies.json");
+            var saveFileName = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Template.Name, "water_bodies.json");
             if (WaterBodies.Save(saveFileName, world.Water))
                 character.SendMessage($"[WaterEdit] |cFFFFFFFF{saveFileName}|r has been saved.");
             else
