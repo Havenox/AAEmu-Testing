@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.IO;
-using System.Linq;
+﻿using System.Collections.Immutable;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
@@ -253,6 +249,18 @@ public static class ScriptCompiler
 
     private static List<SyntaxTree> ParseScripts(IEnumerable<string> list)
     {
+        // Implicit usings
+        var defaultUsings = new[]
+        {
+            "System",
+            "System.Collections.Generic",
+            "System.IO",
+            "System.Linq",
+            "System.Net.Http",
+            "System.Threading",
+            "System.Threading.Tasks"
+        };
+        
         var syntaxTrees = new List<SyntaxTree>();
         StringBuilder sb = new();
         foreach (var path in list)
@@ -261,6 +269,13 @@ public static class ScriptCompiler
             sb.AppendLine(script);
             syntaxTrees.Add(CSharpSyntaxTree.ParseText(script));
         }
+        
+        var globalUsings = new StringBuilder();
+        foreach (var defaultUsing in defaultUsings)
+        {
+            globalUsings.AppendLine($"global using {defaultUsing};");
+        }
+        syntaxTrees.Add(CSharpSyntaxTree.ParseText(globalUsings.ToString()));
 
         var finalString = sb.ToString();
         return syntaxTrees;
