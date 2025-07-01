@@ -60,7 +60,7 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
     /// <summary>
     /// Physics handler
     /// </summary>
-    public BoatPhysicsManager Physics { get; private set; }
+    public PhysicsManager Physics { get; private set; }
 
     /// <summary>
     /// Water definitions
@@ -211,20 +211,6 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
     }
 
     /// <summary>
-    /// Gets heightmap height at target position (not smoothened)
-    /// </summary>
-    /// <param name="x"></param>
-    /// <param name="y"></param>
-    /// <returns></returns>
-    private float GetRawHeightMapHeight(int x, int y)
-    {
-        // This is the old GetHeight()
-        var sx = x / 2;
-        var sy = y / 2;
-        return (float)(Template.HeightMaps[sx, sy] / Template.HeightMaxCoefficient);
-    }
-
-    /// <summary>
     /// Line linear interpolation
     /// </summary>
     /// <param name="start"></param>
@@ -276,10 +262,10 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
         var border = FindNearestSignificantPoints((int)Math.Floor(x), (int)Math.Floor(y));
 
         // Get heights for these points
-        var heightTl = GetRawHeightMapHeight(border.Left, border.Top);
-        var heightTr = GetRawHeightMapHeight(border.Right, border.Top);
-        var heightBl = GetRawHeightMapHeight(border.Left, border.Bottom);
-        var heightBr = GetRawHeightMapHeight(border.Right, border.Bottom);
+        var heightTl = Template.GetRawHeightMapHeight(border.Left, border.Top);
+        var heightTr = Template.GetRawHeightMapHeight(border.Right, border.Top);
+        var heightBl = Template.GetRawHeightMapHeight(border.Left, border.Bottom);
+        var heightBr = Template.GetRawHeightMapHeight(border.Right, border.Bottom);
         var offX = (x - border.Left) / 2;
         var offY = (y - border.Top) / 2;
         var height = Blerp(heightTl, heightTr, heightBl, heightBr, offX, offY); // bilinear interpolation
@@ -346,15 +332,16 @@ public class WorldInstance(WorldTemplate template, uint channelId, bool dontFree
             region.GetList(result, 0);
         return result;
     }
-    
+
     /// <summary>
     /// Creates and starts the physics engine for this world instance
     /// </summary>
     public void StartPhysics()
     {
         Logger.Debug($"Starting physics engine for instance {this}");
-        Physics = new BoatPhysicsManager { SimulationWorld = this };
+        Physics = new PhysicsManager { SimulationWorld = this };
         Physics.Initialize();
+        Physics.InitializeTerrain();
         Physics.StartPhysics();
     }
 
