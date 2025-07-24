@@ -102,7 +102,7 @@ public abstract class Behavior
         var skillTemplate = SkillManager.Instance.GetSkillTemplate(pickedSkillId);
         var skill = new Skill(skillTemplate);
 
-        SetWeaponRange(skill, target); // установим максимальную дистанцию для атаки скиллом
+        SetWeaponRange(skill, target); // set the maximum distance for the skill attack
 
         var delay2 = (int)(Ai.Owner.Template.BaseSkillDelay * 1000);
         if (Ai.Owner.Template.BaseSkillDelay == 0)
@@ -433,5 +433,24 @@ public abstract class Behavior
     {
         Ai.SetDefaultBehavior(this);
         return this;
+    }
+
+    /// <summary>
+    /// Validates whether the associated AI instance has a defined owner.
+    /// </summary>
+    /// <returns><see langword="true"/> if the <c>Ai</c> property is not <see langword="null"/> and its <c>Owner</c> property is
+    /// defined; otherwise, <see langword="false"/>.</returns>
+    protected bool Validate() => Ai?.Owner != null;
+
+    /// <summary>
+    /// Last tick timestamp for throttling.
+    /// </summary>
+    private DateTime _lastTick;
+    protected bool Throttle(float interval = 0.1f)
+    {
+        var now = DateTime.UtcNow;
+        if ((now - _lastTick).TotalSeconds < interval) return false;
+        _lastTick = now;
+        return true;
     }
 }
