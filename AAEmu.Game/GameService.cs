@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Commons.Utils.Updater;
 using AAEmu.Game.Core.Managers;
@@ -122,6 +122,7 @@ public sealed class GameService : IHostedService, IDisposable
         // MateManager.Instance.Load();
         // SlaveManager.Instance.Load(); // Moved to WorldInstance
         TeamManager.Instance.Load();
+        FollowManager.Instance.Initialize();
         AuctionManager.Instance.Load();
         MailManager.Instance.Load();
         ExpressTextManager.Instance.Load();

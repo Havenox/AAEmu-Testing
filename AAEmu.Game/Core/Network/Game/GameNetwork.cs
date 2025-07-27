@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 
 using AAEmu.Commons.Network.Core;
 using AAEmu.Commons.Utils;
@@ -300,6 +300,8 @@ public class GameNetwork : Singleton<GameNetwork>
         RegisterPacket(CSOffsets.CSUnknownInstancePacket, 1, typeof(CSUnknownInstancePacket));
         // 0x13f unk packet
         RegisterPacket(CSOffsets.CSSetupSecondPassword, 1, typeof(CSSetupSecondPassword));
+        RegisterPacket(CSOffsets.CSStartFollowPacket, 1, typeof(CSStartFollowPacket));
+        RegisterPacket(CSOffsets.CSStopFollowPacket, 1, typeof(CSStopFollowPacket));
         // 0x141 unk packet
         // 0x142 unk packet
 

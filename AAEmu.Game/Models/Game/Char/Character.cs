@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Drawing;
 using AAEmu.Commons.Network;
@@ -167,6 +167,10 @@ public partial class Character : Unit, ICharacter
     /// AttachPoint the player currently has in use  
     /// </summary>
     public AttachPointKind AttachedPoint { get; set; }
+    /// <summary>
+    /// Character that this player is following
+    /// </summary>
+    public Character FollowTarget { get; set; }
 
     /// <summary>
     /// Helper to keep track of what cinema is supposed to play
