@@ -11,6 +11,17 @@
 		"NumConnections": 10,
 		"Port": 1237
 	},
+	"AntiMultiLogin": {
+		"Enabled": true,
+		"PreventMultipleIpConnections": true,
+		"PreventMultipleAccountConnections": true,
+		"DisconnectPreviousConnection": true,
+		"ExemptIps": [
+			"127.0.0.1",
+			"::1"
+		],
+		"MaxConnectionsPerIp": 1
+	},
 	"Connections": {
 		"MySQLProvider": {
 			"Database": "aaemu_login",

@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
+using System.Net;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Login.Core.Network.Connections;
 using AAEmu.Login.Core.Packets.L2C;
@@ -10,14 +11,97 @@ using NLog;
 
 namespace AAEmu.Login.Core.Controllers;
 
-public class LoginController(IGameController gameController, IOptions<AppConfiguration> appConfig) : ILoginController
+public class LoginController(IGameController gameController, ILoginConnectionTable connectionTable, IOptions<AppConfiguration> appConfig) : ILoginController
 {
     private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     private readonly bool _autoAccount = appConfig.Value.AutoAccount;
+    private readonly AppConfiguration.AntiMultiLoginConfig _antiMultiLoginConfig = appConfig.Value.AntiMultiLogin;
 
     private readonly ConcurrentDictionary<GameServerId, ConcurrentDictionary<uint, AccountId>>
         _tokens = []; // gsId, [token, accountId]
+
+    /// <summary>
+    /// Verifica se a conexão deve ser permitida baseado nas políticas anti-multi-login
+    /// </summary>
+    /// <param name="connection">Conexão atual</param>
+    /// <param name="accountId">ID da conta (se disponível)</param>
+    /// <returns>True se a conexão deve ser permitida</returns>
+    private bool CheckAntiMultiLogin(LoginConnection connection, AccountId? accountId = null)
+    {
+        if (!_antiMultiLoginConfig.Enabled)
+            return true;
+
+        // Verifica se o IP está na lista de isentos
+        if (_antiMultiLoginConfig.ExemptIps.Contains(connection.Ip.ToString()))
+        {
+            Logger.Debug($"IP {connection.Ip} está na lista de isentos, permitindo conexão");
+            return true;
+        }
+
+        // Verifica conexões por IP
+        if (_antiMultiLoginConfig.PreventMultipleIpConnections)
+        {
+            var existingIpConnections = connectionTable.GetConnectionsByIp(connection.Ip);
+            existingIpConnections = existingIpConnections.Where(c => c.Id != connection.Id).ToList(); // Remove a conexão atual
+
+            if (existingIpConnections.Any())
+            {
+                Logger.Info($"Detectada tentativa de múltipla conexão do IP {connection.Ip}");
+                
+                if (_antiMultiLoginConfig.DisconnectPreviousConnection)
+                {
+                    Logger.Info($"Desconectando {existingIpConnections.Count} conexão(ões) anterior(es) do IP {connection.Ip}");
+                    foreach (var existingConnection in existingIpConnections)
+                    {
+                        existingConnection.SendPacket(new ACLoginDeniedPacket(3)); // Motivo: desconectado por nova conexão
+                        existingConnection.Shutdown();
+                    }
+                }
+                else
+                {
+                    Logger.Info($"Negando nova conexão do IP {connection.Ip} - já existe conexão ativa");
+                    return false;
+                }
+            }
+        }
+        else if (_antiMultiLoginConfig.MaxConnectionsPerIp > 0)
+        {
+            var existingIpConnections = connectionTable.GetConnectionsByIp(connection.Ip);
+            existingIpConnections = existingIpConnections.Where(c => c.Id != connection.Id).ToList();
+
+            if (existingIpConnections.Count >= _antiMultiLoginConfig.MaxConnectionsPerIp)
+            {
+                Logger.Info($"IP {connection.Ip} atingiu o máximo de {_antiMultiLoginConfig.MaxConnectionsPerIp} conexões");
+                return false;
+            }
+        }
+
+        // Verifica conexões por conta (apenas se accountId foi fornecido)
+        if (accountId != null && _antiMultiLoginConfig.PreventMultipleAccountConnections)
+        {
+            var existingAccountConnection = connectionTable.GetConnectionByAccountId(accountId.Value);
+            
+            if (existingAccountConnection != null && existingAccountConnection.Id != connection.Id)
+            {
+                Logger.Info($"Detectada tentativa de múltipla conexão da conta {accountId.Value.Value}");
+                
+                if (_antiMultiLoginConfig.DisconnectPreviousConnection)
+                {
+                    Logger.Info($"Desconectando conexão anterior da conta {accountId.Value.Value}");
+                    existingAccountConnection.SendPacket(new ACLoginDeniedPacket(4)); // Motivo: desconectado por login em outro lugar
+                    existingAccountConnection.Shutdown();
+                }
+                else
+                {
+                    Logger.Info($"Negando nova conexão da conta {accountId.Value.Value} - já está logada");
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Kr Method Auth
@@ -37,9 +121,18 @@ public class LoginController(IGameController gameController, IOptions<AppConfigu
             return;
         }
 
+        var accountId = new AccountId(reader.GetUInt32("id"));
+        
+        // Verificação anti-multi-login
+        if (!CheckAntiMultiLogin(connection, accountId))
+        {
+            connection.SendPacket(new ACLoginDeniedPacket(5)); // Motivo: múltiplas conexões não permitidas
+            return;
+        }
+
         // TODO ... validation password
 
-        connection.AccountId = new AccountId(reader.GetUInt32("id"));
+        connection.AccountId = accountId;
         connection.AccountName = username;
         connection.LastLogin = DateTime.UtcNow;
         connection.LastIp = connection.Ip;
@@ -110,7 +203,16 @@ public class LoginController(IGameController gameController, IOptions<AppConfigu
             return;
         }
 
-        connection.AccountId = new AccountId(reader.GetUInt32("id"));
+        var accountId = new AccountId(reader.GetUInt32("id"));
+        
+        // Verificação anti-multi-login
+        if (!CheckAntiMultiLogin(connection, accountId))
+        {
+            connection.SendPacket(new ACLoginDeniedPacket(5)); // Motivo: múltiplas conexões não permitidas
+            return;
+        }
+
+        connection.AccountId = accountId;
         connection.AccountName = username;
         connection.LastLogin = DateTime.UtcNow;
         connection.LastIp = connection.Ip;
