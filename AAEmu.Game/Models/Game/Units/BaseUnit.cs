@@ -1,4 +1,4 @@
-﻿using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game.Char;
@@ -135,7 +135,17 @@ public class BaseUnit : GameObject, IBaseUnit
         return !target.Buffs.CheckBuffTag((uint)TagsEnum.Stealth);
     }
 
-    public RelationState GetRelationStateTo(BaseUnit unit) => this.Faction?.GetRelationState(unit.Faction) ?? RelationState.Neutral;
+    public RelationState GetRelationStateTo(BaseUnit unit)
+    {
+        // Se ambos são Characters, usar sistema Full PvP
+        if (this is Character character1 && unit is Character character2)
+        {
+            return FullPvPManager.Instance.GetFullPvPRelation(character1, character2);
+        }
+        
+        // Para NPCs e outras unidades, usar sistema de facção normal
+        return this.Faction?.GetRelationState(unit.Faction) ?? RelationState.Neutral;
+    }
 
     public virtual void AddBonus(uint bonusIndex, Bonus bonus)
     {

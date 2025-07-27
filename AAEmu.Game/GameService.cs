@@ -123,6 +123,7 @@ public sealed class GameService : IHostedService, IDisposable
         // SlaveManager.Instance.Load(); // Moved to WorldInstance
         TeamManager.Instance.Load();
         FollowManager.Instance.Initialize();
+        FullPvPManager.Instance.Initialize();
         AuctionManager.Instance.Load();
         MailManager.Instance.Load();
         ExpressTextManager.Instance.Load();

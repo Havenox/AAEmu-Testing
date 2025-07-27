@@ -2801,4 +2801,24 @@ public partial class Character : Unit, ICharacter
     {
         return base.DebugName() + " (" + Id + ")";
     }
+
+    /// <summary>
+    /// Override para processar morte em PvP com drop de coinpurses
+    /// </summary>
+    public override void PostUpdateCurrentHp(BaseUnit attackerBase, int oldHpValue, int newHpValue, KillReason killReason = KillReason.Damage)
+    {
+        // Chamar implementação base primeiro
+        base.PostUpdateCurrentHp(attackerBase, oldHpValue, newHpValue, killReason);
+
+        // Se o jogador morreu (Hp chegou a 0)
+        if (newHpValue <= 0 && oldHpValue > 0)
+        {
+            // Verificar se foi morto por outro jogador
+            if (attackerBase is Character killer && killer != this)
+            {
+                // Processar drop de coinpurses no sistema Full PvP
+                FullPvPManager.Instance.ProcessCoinpurseDropOnPvPDeath(this, killer, Transform.World.Position);
+            }
+        }
+    }
 }
