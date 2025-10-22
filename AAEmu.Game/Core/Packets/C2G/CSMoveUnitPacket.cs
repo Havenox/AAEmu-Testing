@@ -1,4 +1,4 @@
-﻿using AAEmu.Commons.Network;
+using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Game;
 using AAEmu.Game.Core.Packets.G2C;
@@ -87,6 +87,10 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
 
                     // Make sure driver is attached to the ship
                     character.Transform.Parent = ship.Transform;
+                    
+                    // Stop follow if player enters vehicle
+                    FollowManager.Instance.StopFollow(character);
+                    
                     // Actual movement and sending of packets is handle by the Physics Engine
                     break;
                 }
@@ -111,6 +115,10 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
 
                     // Make sure driver is attached to car
                     character.Transform.Parent = car.Transform;
+                    
+                    // Stop follow if player enters vehicle
+                    FollowManager.Instance.StopFollow(character);
+                    
                     car.Transform.Local.SetPosition(vmt.X, vmt.Y, vmt.Z, rotDegX, rotDegY, rotDegZ);
                     car.BroadcastPacket(new SCOneUnitMovementPacket(_objId, vmt), true);
                     car.Transform.FinalizeTransform(); // Propagate position updates to all children

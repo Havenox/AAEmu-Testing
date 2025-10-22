@@ -1,4 +1,4 @@
-﻿namespace AAEmu.Game.Core.Packets.C2G;
+namespace AAEmu.Game.Core.Packets.C2G;
 
 public static class CSOffsets
 {
@@ -282,7 +282,8 @@ public static class CSOffsets
     // 0x13f unk packet
     public const ushort CSSetupSecondPassword = 0x140;
     // 0x141 unk packet
-    // 0x142 unk packet
+    public const ushort CSStartFollowPacket = 0x142;
+    public const ushort CSStopFollowPacket = 0x143;
 
     // no such packets
     public const ushort CSUpdateNationalTaxRatePacket = 0xfff;
