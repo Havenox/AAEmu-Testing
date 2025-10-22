@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
+using System.Net;
 using AAEmu.Login.Models;
 
 namespace AAEmu.Login.Core.Network.Connections;
@@ -27,5 +28,26 @@ public class LoginConnectionTable : ILoginConnectionTable
     public List<LoginConnection> GetConnections()
     {
         return [.. _connections.Values];
+    }
+
+    // Implementação dos novos métodos anti-multi-login
+    public LoginConnection? GetConnectionByAccountId(AccountId accountId)
+    {
+        return _connections.Values.FirstOrDefault(c => c.AccountId.Value != 0 && c.AccountId == accountId);
+    }
+
+    public List<LoginConnection> GetConnectionsByIp(IPAddress ipAddress)
+    {
+        return _connections.Values.Where(c => c.Ip.Equals(ipAddress)).ToList();
+    }
+
+    public bool HasActiveConnectionForAccount(AccountId accountId)
+    {
+        return GetConnectionByAccountId(accountId) != null;
+    }
+
+    public bool HasActiveConnectionForIp(IPAddress ipAddress)
+    {
+        return GetConnectionsByIp(ipAddress).Any();
     }
 }
